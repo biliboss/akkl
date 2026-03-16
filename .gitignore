@@ -1,0 +1,27 @@
+# Android SDK (installed locally, not part of project)
+build-tools/
+platform-tools/
+platforms/
+licenses/
+.temp/
+.knownPackages
+
+# Gradle
+android-cdp/agent-app/.gradle/
+android-cdp/agent-app/.kotlin/
+android-cdp/agent-app/build/
+android-cdp/agent-app/app/build/
+android-cdp/agent-app/local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+/tmp/
