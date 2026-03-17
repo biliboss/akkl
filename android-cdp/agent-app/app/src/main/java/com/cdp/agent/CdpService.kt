@@ -39,6 +39,9 @@ class CdpService : Service() {
     private var screenWidth = 720
     private var screenHeight = 1560
     private var screenDpi = 320
+    private var relayClient: RelayClient? = null
+    private var cameraManager: CameraManager? = null
+    private var audioCapturer: AudioCapturer? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -66,8 +69,12 @@ class CdpService : Service() {
         val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
 
+        cameraManager = CameraManager(this)
+        audioCapturer = AudioCapturer()
+
         startScreenCapture()
         startHttpServer()
+        startRelay()
 
         isRunning = true
         log("CDP Agent started on port $PORT")
@@ -141,6 +148,29 @@ class CdpService : Service() {
                 log("Server error: ${e.message}")
             }
         }.apply { isDaemon = true; start() }
+    }
+
+    private fun startRelay() {
+        val deviceId = "${Build.MODEL.lowercase().replace(" ", "-")}-${
+            Build.SERIAL.takeLast(4).ifEmpty { "%04x".format((Math.random() * 0xFFFF).toInt()) }
+        }"
+        relayClient = RelayClient(
+            relayUrl = RelayClient.DEFAULT_RELAY_URL,
+            deviceId = deviceId,
+            screenWidth = screenWidth,
+            screenHeight = screenHeight,
+            latestFrame = latestFrame,
+            latestCameraFrame = cameraManager!!.latestFrame,
+            audioCapturer = audioCapturer!!,
+            onStartCamera = { front -> cameraManager?.start(front) },
+            onStopCamera = { cameraManager?.stop() },
+            onSwitchCamera = { cameraManager?.switchCamera() },
+            onStartAudio = { audioCapturer?.start() },
+            onStopAudio = { audioCapturer?.stop() },
+            execCmd = ::execCmd,
+            logCallback = ::log
+        )
+        relayClient?.start()
     }
 
     private fun handleClient(socket: Socket) {
@@ -313,6 +343,9 @@ addLog('ready');
 
     override fun onDestroy() {
         isRunning = false
+        relayClient?.stop()
+        cameraManager?.stop()
+        audioCapturer?.stop()
         virtualDisplay?.release()
         imageReader?.close()
         mediaProjection?.stop()

@@ -37,6 +37,16 @@
         android:textIsSelectable="true"
         android:layout_marginBottom="24dp" />
 
+    <TextView
+        android:id="@+id/relayStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="12sp"
+        android:textColor="#888888"
+        android:gravity="center"
+        android:layout_marginBottom="16dp" />
+
     <Button
         android:id="@+id/btnStart"
         android:layout_width="200dp"

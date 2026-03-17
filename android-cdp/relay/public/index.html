@@ -1,0 +1,548 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>CDP Relay Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a1a;color:#e0e0e0;font-family:'SF Mono',monospace;padding:20px}
+h1{color:#e94560;margin-bottom:4px;font-size:22px}
+.subtitle{color:#555;font-size:12px;margin-bottom:20px}
+.devices{display:flex;gap:16px;flex-wrap:wrap}
+.device-card{background:#16213e;border:2px solid #0f3460;border-radius:12px;padding:16px;width:320px;cursor:pointer;transition:all .2s}
+.device-card:hover{border-color:#e94560;transform:translateY(-2px)}
+.device-card.active{border-color:#2ecc71}
+.device-card .thumb{width:100%;border-radius:8px;margin-top:12px;background:#000;min-height:200px}
+.device-name{font-size:16px;color:#e94560;font-weight:bold}
+.device-meta{font-size:11px;color:#888;margin-top:4px}
+#detail{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#0a0a1a;z-index:100}
+#detail .top-bar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#16213e;border-bottom:1px solid #0f3460}
+#detail .top-bar h2{color:#e94560;font-size:16px;flex:1}
+.back-btn{background:#0f3460;color:#e0e0e0;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px}
+.back-btn:hover{background:#e94560}
+#detail .content{display:flex;height:calc(100vh - 50px)}
+#detail .sidebar{width:300px;background:#16213e;padding:12px;overflow-y:auto;display:flex;flex-direction:column;gap:10px}
+#detail .screen-area{flex:1;display:flex;align-items:center;justify-content:center;background:#000}
+#detail .screen-area img{max-height:90vh;cursor:crosshair;border:2px solid #0f3460;border-radius:8px}
+.section{background:#1a1a2e;border-radius:6px;padding:10px}
+.section h3{font-size:12px;color:#0f3460;border-bottom:1px solid #0f3460;padding-bottom:4px;margin-bottom:8px}
+.btn{background:#0f3460;color:#e0e0e0;border:none;padding:6px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px}
+.btn:hover{background:#e94560}
+.btn.active{background:#2ecc71;color:#000}
+.btn-row{display:flex;gap:4px;flex-wrap:wrap}
+.app-list{max-height:200px;overflow-y:auto;font-size:11px}
+.app-item{padding:4px 6px;cursor:pointer;border-radius:3px;display:flex;justify-content:space-between}
+.app-item:hover{background:#0f3460}
+.app-item.current{color:#2ecc71;font-weight:bold}
+input[type=text]{background:#0a0a1a;border:1px solid #0f3460;color:#e0e0e0;padding:5px 8px;border-radius:4px;font-family:inherit;font-size:11px;width:100%}
+#log{background:#0a0a1a;border:1px solid #0f3460;border-radius:4px;padding:6px;font-size:10px;height:100px;overflow-y:auto;white-space:pre-wrap}
+#coords{position:fixed;bottom:8px;right:8px;background:#0f3460;padding:3px 8px;border-radius:4px;font-size:11px;z-index:200;display:none}
+.ws-status{font-size:11px;margin-left:auto}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px}
+.dot.on{background:#2ecc71}.dot.off{background:#e74c3c}
+</style></head><body>
+<h1>CDP Relay Dashboard</h1>
+<p class="subtitle"><span class="dot off" id="wsDot"></span><span id="wsStatus">connecting...</span></p>
+<div class="devices" id="devices">Connecting to relay...</div>
+
+<!-- Detail view -->
+<div id="detail">
+  <div class="top-bar">
+    <button class="back-btn" onclick="closeDetail()">&#8592; Back</button>
+    <h2 id="detail-title">Device</h2>
+    <span id="detail-fps" style="color:#888;font-size:11px">-- fps</span>
+  </div>
+  <div class="content">
+    <div class="sidebar">
+      <div class="section">
+        <h3>Controls</h3>
+        <div class="btn-row">
+          <button class="btn" onclick="dk(4)">Back</button>
+          <button class="btn" onclick="dk(3)">Home</button>
+          <button class="btn" onclick="dk(187)">Recents</button>
+          <button class="btn" onclick="dk(26)">Power</button>
+          <button class="btn" onclick="dk(24)">Vol+</button>
+          <button class="btn" onclick="dk(25)">Vol-</button>
+        </div>
+        <input type="text" id="text-input" placeholder="Type and press Enter" style="margin-top:8px">
+      </div>
+      <div class="section" id="streams-section">
+        <h3>Streams</h3>
+        <div class="btn-row">
+          <button class="btn active" id="btn-screen" onclick="switchToScreen()">Screen</button>
+          <button class="btn" id="btn-camera" onclick="switchToCamera()">Camera</button>
+          <button class="btn" id="btn-flip" onclick="switchCam()" style="display:none">Flip</button>
+        </div>
+        <div class="btn-row" style="margin-top:6px">
+          <button class="btn" id="btn-audio" onclick="toggleAudio()">Mic Off</button>
+          <span id="audio-status" style="color:#888;font-size:10px;margin-left:6px"></span>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Running Apps</h3>
+        <div class="app-list" id="recent-apps"></div>
+      </div>
+      <div class="section">
+        <h3>All Apps</h3>
+        <input type="text" id="app-search" placeholder="Search..." oninput="filterApps()">
+        <div class="app-list" id="all-apps" style="margin-top:4px"></div>
+      </div>
+      <div class="section">
+        <h3>Log</h3>
+        <div id="log"></div>
+      </div>
+    </div>
+    <div class="screen-area">
+      <img id="dscreen" src="" draggable="false">
+    </div>
+  </div>
+</div>
+<div id="coords">-</div>
+
+<script>
+let ws = null;
+let devices = [];
+let currentDeviceId = null;
+let screenInfo = { width: 1080, height: 1920 };
+let frameCount = 0, lastFpsT = Date.now();
+let allAppsCache = [];
+let currentApp = '';
+let pendingRequests = {};
+let reqId = 0;
+
+// Stream state
+let activeStream = 'screen'; // 'screen' or 'camera'
+let audioActive = false;
+let audioContext = null;
+let nextPlayTime = 0;
+let deviceCapabilities = [];
+
+function addLog(m) { const l = document.getElementById('log'); l.textContent += new Date().toLocaleTimeString()+' '+m+'\n'; l.scrollTop = l.scrollHeight; }
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/viewer');
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    document.getElementById('wsDot').className = 'dot on';
+    document.getElementById('wsStatus').textContent = 'connected to relay';
+    ws.send(JSON.stringify({ type: 'list' }));
+  };
+
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      handleBinaryFrame(e.data);
+      return;
+    }
+
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'devices') {
+      devices = msg.list;
+      renderDevices();
+      return;
+    }
+
+    if (msg.type === 'response' && msg.reqId && pendingRequests[msg.reqId]) {
+      pendingRequests[msg.reqId](msg.data);
+      delete pendingRequests[msg.reqId];
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('wsDot').className = 'dot off';
+    document.getElementById('wsStatus').textContent = 'disconnected — reconnecting...';
+    currentDeviceId = null;
+    setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function handleBinaryFrame(buffer) {
+  const view = new Uint8Array(buffer);
+  if (view.length < 2) return;
+
+  let frameType = view[0];
+  let payload;
+
+  // Legacy detection: JPEG starts with 0xFF 0xD8
+  if (frameType === 0xFF) {
+    // Old agent without prefix — treat entire buffer as screen JPEG
+    frameType = 0x01;
+    payload = buffer;
+  } else {
+    payload = buffer.slice(1);
+  }
+
+  if (frameType === 0x01) {
+    // Screen JPEG
+    if (activeStream === 'screen') displayFrame(payload);
+  } else if (frameType === 0x02) {
+    // Camera JPEG
+    if (activeStream === 'camera') displayFrame(payload);
+  } else if (frameType === 0x03) {
+    // Audio chunk
+    if (audioActive) playAudioChunk(payload);
+  }
+}
+
+function displayFrame(payload) {
+  const blob = new Blob([payload], { type: 'image/jpeg' });
+  const url = URL.createObjectURL(blob);
+  const img = document.getElementById('dscreen');
+  const old = img.src;
+  img.src = url;
+  if (old && old.startsWith('blob:')) URL.revokeObjectURL(old);
+  frameCount++;
+  const elapsed = (Date.now() - lastFpsT) / 1000;
+  if (elapsed > 2) {
+    document.getElementById('detail-fps').textContent = (frameCount / elapsed).toFixed(1) + ' fps';
+    frameCount = 0; lastFpsT = Date.now();
+  }
+}
+
+// --- Stream switching ---
+function switchToScreen() {
+  if (activeStream === 'camera') {
+    sendCmd({ type: 'stopCamera' });
+    document.getElementById('btn-flip').style.display = 'none';
+  }
+  activeStream = 'screen';
+  updateStreamButtons();
+  addLog('switched to screen');
+}
+
+function switchToCamera() {
+  if (activeStream !== 'camera') {
+    sendCmd({ type: 'startCamera', facing: 'back' });
+    document.getElementById('btn-flip').style.display = '';
+  }
+  activeStream = 'camera';
+  updateStreamButtons();
+  addLog('switched to camera');
+}
+
+function switchCam() {
+  sendCmd({ type: 'switchCamera' });
+  addLog('camera flipped');
+}
+
+function updateStreamButtons() {
+  document.getElementById('btn-screen').className = 'btn' + (activeStream === 'screen' ? ' active' : '');
+  document.getElementById('btn-camera').className = 'btn' + (activeStream === 'camera' ? ' active' : '');
+}
+
+// --- Audio ---
+function toggleAudio() {
+  audioActive = !audioActive;
+  if (audioActive) {
+    sendCmd({ type: 'startAudio' });
+    initAudioPlayback();
+    document.getElementById('btn-audio').textContent = 'Mic On';
+    document.getElementById('btn-audio').className = 'btn active';
+    document.getElementById('audio-status').textContent = 'listening...';
+    addLog('mic enabled');
+  } else {
+    sendCmd({ type: 'stopAudio' });
+    cleanupAudio();
+    document.getElementById('btn-audio').textContent = 'Mic Off';
+    document.getElementById('btn-audio').className = 'btn';
+    document.getElementById('audio-status').textContent = '';
+    addLog('mic disabled');
+  }
+}
+
+function initAudioPlayback() {
+  try {
+    audioContext = new AudioContext({ sampleRate: 16000 });
+    nextPlayTime = 0;
+  } catch (e) {
+    addLog('audio init failed: ' + e.message);
+  }
+}
+
+function playAudioChunk(payload) {
+  if (!audioContext) return;
+  if (audioContext.state === 'suspended') audioContext.resume();
+
+  // Detect format: try to decode as Opus via AudioContext.decodeAudioData
+  // For raw PCM (fallback): interpret as 16-bit LE mono at 16kHz
+  const view = new DataView(payload.buffer || payload);
+
+  // Heuristic: Opus packets are typically small (< 1KB for 20ms frames)
+  // Raw PCM chunks are larger. Also, Opus packets start with specific TOC bytes.
+  // For simplicity, try PCM decode (works for both — PCM directly, Opus as noise which is acceptable as fallback)
+
+  // Check if this looks like raw PCM (even number of bytes, > 320 bytes = 10ms at 16kHz)
+  const isLikelyPcm = payload.byteLength > 640 && payload.byteLength % 2 === 0;
+
+  if (isLikelyPcm) {
+    // Raw PCM 16-bit LE mono at 16kHz
+    playPcmChunk(payload);
+  } else {
+    // Try Opus decoding via AudioContext
+    tryDecodeOpus(payload);
+  }
+}
+
+function playPcmChunk(payload) {
+  if (!audioContext) return;
+  const samples = payload.byteLength / 2;
+  const buffer = audioContext.createBuffer(1, samples, 16000);
+  const channelData = buffer.getChannelData(0);
+  const view = new DataView(payload.buffer ? payload.buffer : new Uint8Array(payload).buffer);
+
+  for (let i = 0; i < samples; i++) {
+    // 16-bit signed LE to float
+    let val = view.getInt16(i * 2, true);
+    channelData[i] = val / 32768.0;
+  }
+
+  const source = audioContext.createBufferSource();
+  source.buffer = buffer;
+  source.connect(audioContext.destination);
+
+  const now = audioContext.currentTime;
+  if (nextPlayTime < now) nextPlayTime = now + 0.05; // small initial buffer
+  source.start(nextPlayTime);
+  nextPlayTime += buffer.duration;
+}
+
+function tryDecodeOpus(payload) {
+  if (!audioContext) return;
+  // Wrap in a minimal Ogg page for decodeAudioData?
+  // Actually, AudioContext.decodeAudioData doesn't support raw Opus.
+  // For now, treat small unknown chunks as Opus and skip (browser Opus decoding
+  // requires WebCodecs AudioDecoder or a WASM library).
+  // If WebCodecs is available, use it:
+  if (typeof AudioDecoder !== 'undefined' && !window._opusDecoder) {
+    try {
+      window._opusDecoder = new AudioDecoder({
+        output: (audioData) => {
+          if (!audioContext) { audioData.close(); return; }
+          const buf = audioContext.createBuffer(1, audioData.numberOfFrames, audioData.sampleRate);
+          const ch = buf.getChannelData(0);
+          audioData.copyTo(ch, { planeIndex: 0, format: 'f32-planar' });
+          audioData.close();
+
+          const source = audioContext.createBufferSource();
+          source.buffer = buf;
+          source.connect(audioContext.destination);
+          const now = audioContext.currentTime;
+          if (nextPlayTime < now) nextPlayTime = now + 0.05;
+          source.start(nextPlayTime);
+          nextPlayTime += buf.duration;
+        },
+        error: (e) => { console.error('AudioDecoder error:', e); }
+      });
+      window._opusDecoder.configure({ codec: 'opus', sampleRate: 16000, numberOfChannels: 1 });
+    } catch (e) {
+      console.warn('WebCodecs AudioDecoder not available:', e);
+    }
+  }
+
+  if (window._opusDecoder && window._opusDecoder.state === 'configured') {
+    try {
+      window._opusDecoder.decode(new EncodedAudioChunk({
+        type: 'key',
+        timestamp: Date.now() * 1000,
+        data: payload
+      }));
+    } catch (e) {
+      // Ignore decode errors for individual chunks
+    }
+  }
+}
+
+function cleanupAudio() {
+  if (window._opusDecoder) {
+    try { window._opusDecoder.close(); } catch(_) {}
+    window._opusDecoder = null;
+  }
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+  nextPlayTime = 0;
+}
+
+function sendCmd(cmd) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(cmd));
+}
+
+function sendQuery(cmd) {
+  return new Promise((resolve) => {
+    const id = ++reqId;
+    cmd.reqId = id;
+    pendingRequests[id] = resolve;
+    sendCmd(cmd);
+    setTimeout(() => { if (pendingRequests[id]) { pendingRequests[id](null); delete pendingRequests[id]; } }, 5000);
+  });
+}
+
+function renderDevices() {
+  if (currentDeviceId) return;
+  const el = document.getElementById('devices');
+  if (!devices.length) {
+    el.innerHTML = '<p style="color:#888">No devices connected. Open CDP Agent on your Android device.</p>';
+    return;
+  }
+  el.innerHTML = devices.map(d =>
+    '<div class="device-card" onclick="openDevice(\'' + d.deviceId + '\')">' +
+      '<div class="device-name">' + (d.model || d.deviceId) + '</div>' +
+      '<div class="device-meta">' + d.deviceId + ' &middot; Android ' + (d.android || '?') + '</div>' +
+      '<div class="device-meta">' + (d.screen || '') +
+        (d.capabilities ? ' &middot; ' + d.capabilities.join(', ') : '') + '</div>' +
+    '</div>'
+  ).join('');
+}
+
+function openDevice(deviceId) {
+  const d = devices.find(x => x.deviceId === deviceId);
+  if (!d) return;
+  currentDeviceId = deviceId;
+  deviceCapabilities = d.capabilities || ['screen'];
+
+  if (d.screen) {
+    const parts = d.screen.split('x').map(Number);
+    screenInfo = { width: parts[0], height: parts[1] };
+  }
+
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('detail-title').textContent = (d.model || deviceId) + ' (' + deviceId + ')';
+  frameCount = 0; lastFpsT = Date.now();
+
+  // Always show camera and audio buttons
+  document.getElementById('btn-camera').style.display = '';
+  document.getElementById('btn-audio').style.display = '';
+
+  // Reset stream state
+  activeStream = 'screen';
+  audioActive = false;
+  updateStreamButtons();
+  document.getElementById('btn-audio').textContent = 'Mic Off';
+  document.getElementById('btn-audio').className = 'btn';
+  document.getElementById('btn-flip').style.display = 'none';
+  document.getElementById('audio-status').textContent = '';
+
+  sendCmd({ type: 'connect', deviceId: deviceId });
+  addLog('connected to ' + deviceId);
+
+  loadRecentApps();
+  loadAllApps();
+}
+
+function closeDetail() {
+  if (currentDeviceId) {
+    // Stop camera/audio before disconnecting
+    if (activeStream === 'camera') sendCmd({ type: 'stopCamera' });
+    if (audioActive) {
+      sendCmd({ type: 'stopAudio' });
+      cleanupAudio();
+    }
+    sendCmd({ type: 'disconnect' });
+  }
+  document.getElementById('detail').style.display = 'none';
+  document.getElementById('dscreen').src = '';
+  currentDeviceId = null;
+  activeStream = 'screen';
+  audioActive = false;
+  renderDevices();
+}
+
+// --- Input ---
+const dscreen = document.getElementById('dscreen');
+let ds = null;
+
+dscreen.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  const r = dscreen.getBoundingClientRect();
+  ds = { x: (e.clientX-r.left)/r.width*screenInfo.width|0, y: (e.clientY-r.top)/r.height*screenInfo.height|0, t: Date.now() };
+});
+
+dscreen.addEventListener('mouseup', (e) => {
+  if (!ds || !currentDeviceId) return;
+  const r = dscreen.getBoundingClientRect();
+  const ex = (e.clientX-r.left)/r.width*screenInfo.width|0;
+  const ey = (e.clientY-r.top)/r.height*screenInfo.height|0;
+  const dist = Math.hypot(ex-ds.x, ey-ds.y);
+  if (dist < 10) {
+    addLog('tap '+ds.x+','+ds.y);
+    sendCmd({ type: 'tap', x: ds.x, y: ds.y });
+  } else {
+    const ms = Math.max(100, Date.now()-ds.t);
+    addLog('swipe');
+    sendCmd({ type: 'swipe', x1: ds.x, y1: ds.y, x2: ex, y2: ey, ms: ms });
+  }
+  ds = null;
+});
+
+dscreen.addEventListener('mousemove', (e) => {
+  const r = dscreen.getBoundingClientRect();
+  const cx = (e.clientX-r.left)/r.width*screenInfo.width|0;
+  const cy = (e.clientY-r.top)/r.height*screenInfo.height|0;
+  const el = document.getElementById('coords');
+  el.style.display = 'block';
+  el.textContent = cx + ', ' + cy;
+});
+
+dscreen.addEventListener('dragstart', (e) => e.preventDefault());
+
+function dk(code) {
+  addLog('key ' + code);
+  sendCmd({ type: 'key', code: code });
+}
+
+document.getElementById('text-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && currentDeviceId) {
+    const t = e.target.value;
+    if (t) {
+      addLog('text: ' + t);
+      sendCmd({ type: 'text', value: t });
+      e.target.value = '';
+    }
+  }
+});
+
+// --- Apps ---
+async function loadRecentApps() {
+  const data = await sendQuery({ type: 'query', cmd: 'recents' });
+  const curData = await sendQuery({ type: 'query', cmd: 'current' });
+  currentApp = curData ? curData.app || '' : '';
+  const el = document.getElementById('recent-apps');
+  if (!data || !data.length) { el.innerHTML = '<div style="color:#555">No recent apps</div>'; return; }
+  el.innerHTML = data.map(a =>
+    '<div class="app-item' + (currentApp === a.package ? ' current' : '') + '" onclick="launchApp(\'' + a.package + '\')">' + a.package + '</div>'
+  ).join('');
+}
+
+async function loadAllApps() {
+  const data = await sendQuery({ type: 'query', cmd: 'apps' });
+  allAppsCache = data || [];
+  renderApps();
+}
+
+function filterApps() { renderApps(); }
+
+function renderApps() {
+  const q = document.getElementById('app-search').value.toLowerCase();
+  const filtered = allAppsCache.filter(a => a.toLowerCase().includes(q));
+  document.getElementById('all-apps').innerHTML = filtered.slice(0, 50).map(a =>
+    '<div class="app-item" onclick="launchApp(\'' + a + '\')">' + a.split('.').pop() + '<span style="color:#555">' + a + '</span></div>'
+  ).join('');
+}
+
+function launchApp(pkg) {
+  addLog('launch: ' + pkg);
+  sendCmd({ type: 'launch', package: pkg });
+  setTimeout(() => loadRecentApps(), 1500);
+}
+
+function autoConnect() {
+  if (devices.length === 1 && !currentDeviceId) {
+    openDevice(devices[0].deviceId);
+  }
+}
+
+connectWS();
+setTimeout(autoConnect, 1500);
+</script></body></html>
